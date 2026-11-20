@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Things in Leeds</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-slate-50 text-slate-900">
+  <main class="mx-auto max-w-3xl p-6">
+    <h1 class="mb-6 text-3xl font-bold">Things in Leeds</h1>
+    <form id="search-form" class="flex gap-2">
+      <input id="query" class="flex-1 rounded border p-3" placeholder="Free pub in Headingley on Friday night" required>
+      <button class="rounded bg-sky-700 px-5 py-3 font-semibold text-white">Search</button>
+    </form>
+    <pre id="filters" class="mt-6 hidden rounded bg-slate-900 p-4 text-sm text-green-200"></pre>
+    <div id="results" class="mt-6 space-y-3"></div>
+  </main>
+  <script>
+    document.querySelector("#search-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const query = document.querySelector("#query").value;
+      document.querySelector("#results").textContent = "Searching...";
+      try {
+        const translated = await fetch("/api/translate", {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({query})
+        }).then(r => r.json());
+        if (!translated || translated.detail) throw new Error(translated.detail || "Translation failed");
+        document.querySelector("#filters").textContent = JSON.stringify(translated, null, 2);
+        document.querySelector("#filters").classList.remove("hidden");
+        const found = await fetch("/api/search", {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(translated)
+        }).then(r => r.json());
+        document.querySelector("#results").innerHTML = (found.results || []).map(v =>
+          `<article class="rounded border bg-white p-4"><h2 class="font-bold">${v.name}</h2>
+           <p>${v.neighbourhood} · ${v.venue_type}</p></article>`
+        ).join("") || "<p>No matching venues found.</p>";
+      } catch (error) {
+        document.querySelector("#results").textContent = error.message;
+      }
+    });
+  </script>
+</body>
+</html>
