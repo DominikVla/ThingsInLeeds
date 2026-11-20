@@ -9,7 +9,7 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.database import get_db, search_venues
+from app.database import get_read_only_db, search_venues
 from app.schemas import VenueFilters
 
 app = FastAPI(title="Things in Leeds", version="1.0.0")
@@ -62,7 +62,10 @@ async def translate(query: dict[str, str]) -> VenueFilters:
 
 
 @app.post("/api/search")
-async def search(filters: VenueFilters, db: Session = Depends(get_db)) -> dict[str, Any]:
+async def search(
+    filters: VenueFilters,
+    db: Session = Depends(get_read_only_db),
+) -> dict[str, Any]:
     try:
         results = search_venues(db, filters)
     except Exception as exc:

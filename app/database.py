@@ -1,18 +1,70 @@
+import re
 from collections.abc import Iterator
 
-from sqlalchemy import bindparam, create_engine, text
+from sqlalchemy import bindparam, create_engine, event, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.schemas import VenueFilters
 
-engine: Engine = create_engine(settings.database_url, pool_pre_ping=True)
+
+_ALLOWED_READ_STATEMENTS = re.compile(
+    r"^(SELECT|WITH|SHOW|DESCRIBE|DESC|EXPLAIN|PRAGMA|VALUES)\b",
+    re.IGNORECASE,
+)
+_FORBIDDEN_READ_ONLY_WRITE = re.compile(
+    r"\b(INSERT|UPDATE|DELETE|REPLACE|MERGE|CREATE|ALTER|DROP|TRUNCATE|RENAME|CALL|GRANT|REVOKE)\b",
+    re.IGNORECASE,
+)
+
+
+def is_read_only_statement(statement: str) -> bool:
+    cleaned = re.sub(r"^\s*(?:/\*.*?\*/|--[^\n]*\n)*", "", statement, flags=re.DOTALL)
+    return bool(_ALLOWED_READ_STATEMENTS.match(cleaned)) and not bool(
+        _FORBIDDEN_READ_ONLY_WRITE.search(cleaned)
+    )
+
+
+def configure_read_only_engine(database_url: str) -> Engine:
+    engine = create_engine(database_url, pool_pre_ping=True)
+
+    @event.listens_for(engine, "before_cursor_execute")
+    def reject_writes(
+        conn,
+        cursor,
+        statement,
+        parameters,
+        context,
+        executemultiple,
+    ) -> None:
+        if not is_read_only_statement(statement):
+            raise RuntimeError("Only read-only SQL is allowed on the LLM database copy")
+
+    if engine.dialect.name == "mysql":
+        @event.listens_for(engine, "connect")
+        def set_read_only(dbapi_connection, connection_record) -> None:
+            with dbapi_connection.cursor() as cursor:
+                cursor.execute("SET SESSION TRANSACTION READ ONLY")
+
+    return engine
+
+
+# The application, including any LLM-facing database access, only receives
+# this read-only copy. A separate DATABASE_URL remains the write-capable source.
+read_only_engine: Engine = configure_read_only_engine(settings.read_only_database_url)
+# Backwards-compatible names used by existing integrations.
+llm_engine: Engine = read_only_engine
+engine: Engine = read_only_engine
+
+
+def get_read_only_db() -> Iterator[Session]:
+    with Session(read_only_engine) as session:
+        yield session
 
 
 def get_db() -> Iterator[Session]:
-    with Session(engine) as session:
-        yield session
+    yield from get_read_only_db()
 
 
 def search_venues(db: Session, filters: VenueFilters) -> list[dict]:
