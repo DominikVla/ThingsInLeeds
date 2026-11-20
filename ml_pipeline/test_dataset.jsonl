@@ -1,0 +1,2 @@
+{"prompt":"Find a pub in Headingley","expected_json":{"venue_types":["hospitality"],"neighbourhoods":["Headingley"],"max_price_tier":null,"max_budget_gbp":null,"is_free_entry":null,"categories":["Pub"],"open_at_time":null,"vibe_keywords":[]}}
+{"prompt":"Free museums in the city centre suitable for families","expected_json":{"venue_types":["attraction"],"neighbourhoods":["City Centre"],"max_price_tier":null,"max_budget_gbp":null,"is_free_entry":true,"categories":["Museum"],"open_at_time":null,"vibe_keywords":["family"]}}
